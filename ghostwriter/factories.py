@@ -803,6 +803,17 @@ class NamecheapConfigurationFactory(factory.django.DjangoModelFactory):
     page_size = 100
 
 
+class CloudflareConfigurationFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = "commandcenter.CloudflareConfiguration"
+
+    enable = Faker("boolean")
+    api_key = Faker("credit_card_number")
+    username = Faker("user_name")
+    api_username = Faker("user_name")
+    client_ip = Faker("ipv4_private")
+    page_size = 100
+
 class ReportConfigurationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = "commandcenter.ReportConfiguration"
