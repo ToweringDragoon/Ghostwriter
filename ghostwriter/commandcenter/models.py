@@ -74,6 +74,38 @@ class NamecheapConfiguration(SingletonModel):
     def sanitized_api_key(self):
         return sanitize(self.api_key)
 
+class CloudflareConfiguration(SingletonModel):
+    enable = models.BooleanField(default=False)
+    api_key = models.CharField(max_length=255, default="Cloudflare API Key", help_text="Your Cloudflare API key")
+    username = models.CharField(max_length=255, default="Account Email", help_text="Your Cloudflare email")
+    api_username = models.CharField(
+        "Account ID",
+        max_length=255,
+        default="Account ID",
+        help_text="Your Cloudflare Account ID",
+    )
+    client_ip = models.CharField(
+        "Whitelisted IP Address",
+        max_length=255,
+        default="Whitelisted IP Address",
+        help_text="Your external IP address registered with Cloudflare",
+    )
+    page_size = models.IntegerField(
+        "Page Size",
+        default=100,
+        help_text="Maximum number of domains to return (100 is the max allowed)",
+    )
+
+    def __str__(self):
+        return "Cloudflare Configuration"
+
+    class Meta:
+        verbose_name = "Cloudflare Configuration"
+
+    @property
+    def sanitized_api_key(self):
+        return sanitize(self.api_key)
+
 
 class ReportConfiguration(SingletonModel):
     enable_borders = models.BooleanField(default=False, help_text="Enable borders around images in Word documents")
