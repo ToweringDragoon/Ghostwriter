@@ -95,7 +95,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("enable", models.BooleanField(default=False)),
-                ("api_key", models.CharField(default="Cloudflare API Key", max_length=255)),
+                ("api_token", models.CharField(default="Cloudflare API Token", max_length=255)),
                 ("username", models.CharField(default="Account email", max_length=255)),
                 ("api_username", models.CharField(default="Account ID", max_length=255)),
                 ("client_ip", models.CharField(default="Whitelisted IP Address", max_length=255)),
