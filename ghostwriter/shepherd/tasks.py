@@ -918,8 +918,7 @@ def fetch_cloudflare_domains():
 
     try:
         client = Cloudflare(
-            api_email=cloudflare_config.api_username,
-            api_key=cloudflare_config.api_key,
+            api_token=cloudflare_config.api_token
         )
         
         page = 1
