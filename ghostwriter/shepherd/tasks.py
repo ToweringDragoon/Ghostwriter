@@ -24,6 +24,7 @@ from lxml import objectify
 from ghostwriter.commandcenter.models import (
     CloudServicesConfiguration,
     NamecheapConfiguration,
+    CLoudflareConfiguration,
     VirusTotalConfiguration,
 )
 from ghostwriter.modules.cloud_monitors import (
