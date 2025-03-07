@@ -76,7 +76,7 @@ class NamecheapConfiguration(SingletonModel):
 
 class CloudflareConfiguration(SingletonModel):
     enable = models.BooleanField(default=False)
-    api_key = models.CharField(max_length=255, default="Cloudflare API Key", help_text="Your Cloudflare API key")
+    api_token = models.CharField(max_length=255, default="Cloudflare API Token", help_text="Your Cloudflare API Token")
     username = models.CharField(max_length=255, default="Account Email", help_text="Your Cloudflare email")
     api_username = models.CharField(
         "Account ID",
@@ -104,7 +104,7 @@ class CloudflareConfiguration(SingletonModel):
 
     @property
     def sanitized_api_key(self):
-        return sanitize(self.api_key)
+        return sanitize(self.api_token)
 
 
 class ReportConfiguration(SingletonModel):
