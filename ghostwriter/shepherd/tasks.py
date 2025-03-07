@@ -917,6 +917,8 @@ def fetch_cloudflare_domains():
 
     logger.info("Starting Cloudflare synchronization task at %s", datetime.now())
 
+    cloudflare_config = CloudflareConfiguration.get_solo()
+    
     try:
         client = Cloudflare(
             api_token=cloudflare_config.api_token
