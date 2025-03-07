@@ -95,6 +95,42 @@
         </div>
     {% endif %}
 
+    {% if enable_cloudflare %}
+        <div class="container pb-2">
+            <h4 class="icon cloud-sync-icon">Pull Domains from Cloudflare</h4>
+            <hr>
+
+            <p>The domain library sync with Cloudflare was last requested on:</p>
+            <p>
+                <strong>{{ cloudflare_last_update_requested }}</strong>
+            </p>
+
+            {% if cloudflare_last_update_completed %}
+                {% if cloudflare_last_update_completed == 'Failed' %}
+                    <p>Request Status: <span class="badge badge-pill badge-danger">{{ cloudflare_last_update_completed }}</span></p>
+                    {% if cloudflare_last_result %}
+                        <div class="mb-3 error-div">
+                            <strong>Error: </strong>
+                            <em class="error">
+                                {{ cloudflare_last_result.errors }}
+                            </em>
+                        </div>
+                    {% endif %}
+                {% else %}
+                    {% if cloudflare_last_update_completed %}
+                        <p>Request Status: <span class="badge badge-pill badge-success">Completed on {{ cloudflare_last_update_completed }} in {{ cloudflare_last_update_time }} minutes</span></p>
+                    {% endif %}
+                {% endif %}
+            {% endif %}
+
+            <form class="js-queue-task" queue-task-url="{% url 'shepherd:ajax_update_cloudflare' %}" method="POST">
+                {% csrf_token %}
+                <input type="hidden" id="user_id" name="user_id" value='{{ user.get_username }}'>
+                <button type="submit" class="btn btn-primary col-md-4">Pull from Cloudflare</button>
+            </form>
+        </div>
+    {% endif %}
+
     <!-- Domain Categories Section -->
     {% if enable_vt %}
         <div class="container pb-2">
