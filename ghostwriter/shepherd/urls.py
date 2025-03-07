@@ -76,7 +76,7 @@ urlpatterns += [
     ),
     path(
         "ajax/update/cloudflare",
-        views.RegistrarSynccloudflare.as_view(),
+        views.RegistrarSyncCloudflare.as_view(),
         name="ajax_update_cloudflare",
     ),
     path(
