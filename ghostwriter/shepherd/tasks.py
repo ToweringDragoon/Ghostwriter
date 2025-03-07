@@ -926,30 +926,28 @@ def fetch_cloudflare_domains():
         )
         
         page = 1
-        per_page = 50  # Adjust based on API limits
+        per_page = 20  # Adjust based on API limits
         total_pages = 1
-        
+    
         while page <= total_pages:
             logger.info("Requesting page %s of %s", page, total_pages)
             response = client.zones.list(page=page, per_page=per_page)
-            
+
             if response.success:
-                result_info = response.result_info
-                total_pages = ceil(result_info["total_count"] / result_info["per_page"])
-                
+                total_pages = ceil(response.result_info.total_count / response.result_info.per_page)
+
                 for domain in response.result:
                     domains_list.append({
-                        "id": domain["id"],
-                        "name": domain["name"],
-                        "type": domain.get("type", "unknown"),
-                        "status": "active" if not domain["meta"].get("phishing_detected", False) else "burned",
+                        "id": domain.id,
+                        "name": domain.name,
+                        "type": domain.type,
+                        "status": "active" if not domain.meta.phishing_detected else "burned",
                     })
             else:
-                error_messages = " | ".join([error["message"] for error in response.errors])
+                error_messages = " | ".join([error.message for error in response.errors])
                 logger.error("Cloudflare API returned errors: %s", error_messages)
-                domain_changes["errors"]["cloudflare"] = f"Cloudflare API returned errors: {error_messages}"
-                return domain_changes
-            
+                return {"errors": {"cloudflare": f"Cloudflare API returned errors: {error_messages}"}}
+
             page += 1
     except Exception:
         trace = traceback.format_exc()
