@@ -903,15 +903,6 @@ def fetch_namecheap_domains():
 
     return domain_changes
 
-import os
-import traceback
-import logging
-from datetime import datetime
-from math import ceil
-from cloudflare import Cloudflare
-
-logger = logging.getLogger(__name__)
-
 def fetch_cloudflare_domains():
     """
     Fetch a list of registered domains for the specified Cloudflare account using the Cloudflare API.
