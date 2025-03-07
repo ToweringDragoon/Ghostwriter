@@ -984,8 +984,8 @@ def fetch_cloudflare_domains():
                     domain_changes["updates"][domain.id] = {"domain": domain.name, "change": "renewed"}
 
         for domain in domains_list:
-            entry = {"name": domain["name"], "registrar": "Cloudflare"}
-            newly_burned = domain["status"] == "burned"
+            entry = {"name": domain.name, "registrar": "Cloudflare"}
+            newly_burned = domain.status == "burned"
             
             if newly_burned:
                 entry["health_status"] = health_burned_status
@@ -993,14 +993,14 @@ def fetch_cloudflare_domains():
                 entry["burned_explanation"] = "<p>Cloudflare detected potential phishing activity on this domain.</p>"
             
             try:
-                instance, created = Domain.objects.update_or_create(name=domain["name"], defaults=entry)
+                instance, created = Domain.objects.update_or_create(name=domain.name, defaults=entry)
                 instance.save()
                 change_status = "created & burned" if created and newly_burned else "burned" if newly_burned else "created" if created else "updated"
-                domain_changes["updates"][instance.id] = {"domain": domain["name"], "change": change_status}
+                domain_changes["updates"][instance.id] = {"domain": domain.name, "change": change_status}
             except Exception:
                 trace = traceback.format_exc()
-                logger.exception("Failed to update domain %s", domain["name"])
-                domain_changes["errors"][domain["name"]] = {"error": trace}
+                logger.exception("Failed to update domain %s", domain.name)
+                domain_changes["errors"][domain.name] = {"error": trace}
 
         logger.info("Cloudflare synchronization completed at %s with these changes:\n%s", datetime.now(), domain_changes)
     else:
