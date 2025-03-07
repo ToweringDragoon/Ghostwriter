@@ -903,6 +903,119 @@ def fetch_namecheap_domains():
 
     return domain_changes
 
+import os
+import traceback
+import logging
+from datetime import datetime
+from math import ceil
+from cloudflare import Cloudflare
+
+logger = logging.getLogger(__name__)
+
+def fetch_cloudflare_domains():
+    """
+    Fetch a list of registered domains for the specified Cloudflare account using the Cloudflare API.
+    Requires an API key and email for authentication. Returns a dictionary containing errors
+    and each domain name paired with change status.
+
+    Result status: created, updated, burned, updated & burned
+    """
+    domains_list = []
+    domain_changes = {"errors": {}, "updates": {}}
+
+    logger.info("Starting Cloudflare synchronization task at %s", datetime.now())
+
+    try:
+        client = Cloudflare(
+            api_email=os.environ.get("CLOUDFLARE_EMAIL"),
+            api_key=os.environ.get("CLOUDFLARE_API_KEY"),
+        )
+        
+        page = 1
+        per_page = 50  # Adjust based on API limits
+        total_pages = 1
+        
+        while page <= total_pages:
+            logger.info("Requesting page %s of %s", page, total_pages)
+            response = client.zones.list(page=page, per_page=per_page)
+            
+            if response.success:
+                result_info = response.result_info
+                total_pages = ceil(result_info["total_count"] / result_info["per_page"])
+                
+                for domain in response.result:
+                    domains_list.append({
+                        "id": domain["id"],
+                        "name": domain["name"],
+                        "type": domain.get("type", "unknown"),
+                        "status": "active" if not domain["meta"].get("phishing_detected", False) else "burned",
+                    })
+            else:
+                error_messages = " | ".join([error["message"] for error in response.errors])
+                logger.error("Cloudflare API returned errors: %s", error_messages)
+                domain_changes["errors"]["cloudflare"] = f"Cloudflare API returned errors: {error_messages}"
+                return domain_changes
+            
+            page += 1
+    except Exception:
+        trace = traceback.format_exc()
+        logger.exception("Cloudflare API request failed")
+        domain_changes["errors"]["cloudflare"] = f"The Cloudflare API request failed: {trace}"
+        return domain_changes
+
+    # No domains returned if the provided account doesn't have any
+    if domains_list:
+        domain_queryset = Domain.objects.filter(registrar="Cloudflare")
+        expired_status = DomainStatus.objects.get(domain_status="Expired")
+        burned_status = DomainStatus.objects.get(domain_status="Burned")
+        available_status = DomainStatus.objects.get(domain_status="Available")
+        health_burned_status = HealthStatus.objects.get(health_status="Burned")
+
+        for domain in domain_queryset:
+            if not any(d["name"] == domain.name for d in domains_list):
+                logger.info("Domain %s is not in the Cloudflare data", domain.name)
+                if not domain.expired:
+                    domain_changes["updates"][domain.id] = {"domain": domain.name, "change": "expired"}
+                    domain.expired = True
+                    domain.auto_renew = False
+                    domain.domain_status = expired_status
+                    domain.save()
+                    _ = DomainNote.objects.create(
+                        domain=domain,
+                        note="Automatically set to Expired because the domain did not appear in Cloudflare during a sync.",
+                    )
+            else:
+                if domain.expired:
+                    domain.expired = False
+                    domain.domain_status = available_status
+                    domain.save()
+                    domain_changes["updates"][domain.id] = {"domain": domain.name, "change": "renewed"}
+
+        for domain in domains_list:
+            entry = {"name": domain["name"], "registrar": "Cloudflare"}
+            newly_burned = domain["status"] == "burned"
+            
+            if newly_burned:
+                entry["health_status"] = health_burned_status
+                entry["domain_status"] = burned_status
+                entry["burned_explanation"] = "<p>Cloudflare detected potential phishing activity on this domain.</p>"
+            
+            try:
+                instance, created = Domain.objects.update_or_create(name=domain["name"], defaults=entry)
+                instance.save()
+                change_status = "created & burned" if created and newly_burned else "burned" if newly_burned else "created" if created else "updated"
+                domain_changes["updates"][instance.id] = {"domain": domain["name"], "change": change_status}
+            except Exception:
+                trace = traceback.format_exc()
+                logger.exception("Failed to update domain %s", domain["name"])
+                domain_changes["errors"][domain["name"]] = {"error": trace}
+
+        logger.info("Cloudflare synchronization completed at %s with these changes:\n%s", datetime.now(), domain_changes)
+    else:
+        logger.warning("No domains were returned for the provided Cloudflare account!")
+
+    return domain_changes
+
 
 def months_between(date1, date2):
     """
@@ -1426,4 +1539,27 @@ def test_virustotal(user):
     )
 
     logger.info("Test of the VirusTotal completed at %s", datetime.now())
+    return {"result": level, "message": message}
+
+def test_cloudflare_api(user):
+    """
+    Test the Cloudflare API configuration stored in environment variables stored in :model:`commandcenter.CloudflareConfiguration`.
+    """
+    level = "error"
+    logger.info("Starting Cloudflare API test at %s", datetime.now())
+    try:
+        client = Cloudflare(
+            api_email=os.environ.get("CLOUDFLARE_EMAIL"),
+            api_key=os.environ.get("CLOUDFLARE_API_KEY"),
+        )
+        response = client.accounts.tokens.verify()
+        if response.success:
+            level = "success"
+            message = "Successfully authenticated to Cloudflare"
+        else:
+            message = "Cloudflare API authentication failed: " + " | ".join([error["message"] for error in response.errors])
+    except Exception:
+        trace = traceback.format_exc()
+        logger.exception("Cloudflare API request failed")
+        message = f"The Cloudflare API request failed: {trace}"
     return {"result": level, "message": message}
