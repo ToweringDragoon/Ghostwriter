@@ -33,6 +33,11 @@ urlpatterns += [
         name="ajax_test_namecheap",
     ),
     path(
+        "ajax/management/test/cloudflare",
+        views.TestCloudflareConnection.as_view(),
+        name="ajax_test_cloudflare",
+    ),
+    path(
         "ajax/management/test/slack",
         views.TestSlackConnection.as_view(),
         name="ajax_test_slack",
