@@ -137,6 +137,37 @@
         <td class="text-justify">Disabled</td>
       </tr>
     {% endif %}
+    {% if cloudflare_config.enable %}
+      <tr>
+        <td class="text-left icon toggle-on-icon">Cloudflare API Enabled</td>
+        <td class="text-justify">{{ cloudflare_config.enable }}</td>
+      </tr>
+      <tr>
+        <td class="text-left icon laptop-icon">Cloudflare Whitelisted IP</td>
+        <td class="text-justify">{{ cloudflare_config.client_ip }}</td>
+      </tr>
+      <tr>
+        <td class="text-left icon key-icon">Cloudflare API Key</td>
+        <td class="text-justify">{{ cloudflare_config.sanitized_api_key }}</td>
+      </tr>
+      <tr>
+        <td class="text-left icon user-icon">Cloudflare Email</td>
+        <td class="text-justify">{{ cloudflare_config.username }}</td>
+      </tr>
+      <tr>
+        <td class="text-left icon user-gear-icon">Cloudflare Account ID</td>
+        <td class="text-justify">{{ cloudflare_config.account_id }}</td>
+      </tr>
+      <tr>
+        <td class="text-left icon hash-icon">Cloudflare Page Size</td>
+        <td class="text-justify">{{ cloudflare_config.page_size }}</td>
+      </tr>
+    {% else %}
+      <tr>
+        <td class="text-left icon toggle-off-icon">Cloudflare API Enabled</td>
+        <td class="text-justify">Disabled</td>
+      </tr>
+    {% endif %}
 
     <!-- Spacer -->
     <tr>
