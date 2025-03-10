@@ -76,9 +76,9 @@ class NamecheapConfiguration(SingletonModel):
 
 class CloudflareConfiguration(SingletonModel):
     enable = models.BooleanField(default=False)
-    api_token = models.CharField(max_length=255, default="Cloudflare API Token", help_text="Your Cloudflare API Token")
+    api_key = models.CharField(max_length=255, default="Cloudflare API key", help_text="Your Cloudflare API Token")
     username = models.CharField(max_length=255, default="Account Email", help_text="Your Cloudflare email")
-    api_username = models.CharField(
+    account_id = models.CharField(
         "Account ID",
         max_length=255,
         default="Account ID",
@@ -95,6 +95,16 @@ class CloudflareConfiguration(SingletonModel):
         default=100,
         help_text="Maximum number of domains to return (100 is the max allowed)",
     )
+
+    def __str__(self):
+        return "Cloudflare Configuration"
+
+    class Meta:
+        verbose_name = "Cloudflare Configuration"
+
+    @property
+    def sanitized_api_key(self):
+        return sanitize(self.api_token)
 
     def __str__(self):
         return "Cloudflare Configuration"
