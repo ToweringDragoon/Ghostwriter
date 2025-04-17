@@ -18,7 +18,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.files import File
 from django.db import transaction
-from django.db.models import Q, Max
+from django.db.models import Q, Max, OuterRef, Exists
 from django.http import (
     FileResponse,
     Http404,
@@ -431,7 +431,7 @@ class ReportActivate(RoleBasedAccessControlMixin, SingleObjectMixin, View):
             self.request.session["active_report"] = {}
             self.request.session["active_report"]["id"] = report.id
             self.request.session["active_report"]["title"] = report.title
-            message = "{report} is now your active report and you will be redirected there in 5 seconds...".format(
+            message = "{report} is now your active report and you can open it with the button at the top of the sidebar.".format(
                 report=report.title
             )
             data = {
@@ -1146,6 +1146,17 @@ class FindingListView(RoleBasedAccessControlMixin, ListView):
         if self.request.GET.get("on_reports", "").strip():
             findings = ReportFindingLink.objects.filter(report__project__in=get_project_list(self.request.user))
             self.searching_report_findings = True
+            if self.request.GET.get("not_cloned", "").strip():
+                # Create a subquery to check if a Finding with the same title exists
+                subquery = Finding.objects.filter(title=OuterRef("title"))
+
+                # Annotate the ReportFindingLink queryset with the ``exists_in_finding`` property
+                report_finding_links = ReportFindingLink.objects.annotate(
+                    exists_in_finding=Exists(subquery)
+                )
+
+                # Filter the queryset based on the exists_in_finding property
+                findings = report_finding_links.filter(exists_in_finding=True)
         else:
             findings = Finding.objects.all()
 
@@ -1165,7 +1176,7 @@ class FindingListView(RoleBasedAccessControlMixin, ListView):
         return findings
 
     def get(self, request, *args, **kwarg):
-        findings_filter = FindingFilter(request.GET, queryset=self.get_queryset())
+        findings_filter = FindingFilter(request.GET, queryset=self.get_queryset(), request=self.request)
         return render(
             request, "reporting/finding_list.html", {
                 "filter": findings_filter,
@@ -1332,7 +1343,7 @@ class ReportListView(RoleBasedAccessControlMixin, ListView):
         return get_reports_list(self.request.user)
 
     def get(self, request, *args, **kwarg):
-        reports_filter = ReportFilter(request.GET, queryset=self.get_queryset())
+        reports_filter = ReportFilter(request.GET, queryset=self.get_queryset(), request=self.request)
         return render(request, "reporting/report_list.html", {"filter": reports_filter})
 
 
@@ -1792,7 +1803,7 @@ class ReportTemplateListView(RoleBasedAccessControlMixin, generic.ListView):
         return queryset
 
     def get(self, request, *args, **kwarg):
-        templates_filter = ReportTemplateFilter(request.GET, queryset=self.get_queryset())
+        templates_filter = ReportTemplateFilter(request.GET, queryset=self.get_queryset(), request=self.request)
         return render(request, "reporting/report_templates_list.html", {"filter": templates_filter})
 
 
@@ -1845,7 +1856,11 @@ class ReportTemplateCreate(RoleBasedAccessControlMixin, CreateView):
     def get_initial(self):
         date = datetime.now().strftime("%d %B %Y")
         initial_upload = f'<p><span class="bold">{date}</span></p><p>Initial upload</p>'
-        return {"changelog": initial_upload, "p_style": "Normal"}
+        return {
+            "changelog": initial_upload,
+            "p_style": "Normal",
+            "evidence_image_width": 6.5,
+        }
 
     def get_success_url(self):
         messages.success(
@@ -2950,7 +2965,7 @@ class ObservationListView(RoleBasedAccessControlMixin, ListView):
         return observations
 
     def get(self, request, *args, **kwarg):
-        observation_filter = ObservationFilter(request.GET, queryset=self.get_queryset())
+        observation_filter = ObservationFilter(request.GET, queryset=self.get_queryset(), request=self.request)
         return render(
             request,
             "reporting/observation_list.html",
