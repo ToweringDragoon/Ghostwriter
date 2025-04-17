@@ -7,6 +7,10 @@ redis==3.5.3  # https://github.com/antirez/redis
 uvicorn[standard]==0.22.0  # https://github.com/encode/uvicorn
 Twisted==20.3.0  # Temporary constraint for channels: https://github.com/django/daphne/pull/359
 cloudflare==4.0.0
+google-api-python-client>=2.115.0
+google-auth>=2.25.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.1.0
 
 # Django
 # ------------------------------------------------------------------------------
