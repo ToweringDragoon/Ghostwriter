@@ -222,6 +222,40 @@ class TestDOConnection(RoleBasedAccessControlMixin, View):
         }
         return JsonResponse(data)
 
+class TestGCPConnection(RoleBasedAccessControlMixin, View):
+    """
+    Create an individual :model:`django_q.Task` under group ``GCP Test`` with
+    :task:`shepherd.tasks.test_gcp` to test the GCP info stored in
+    :model:`commandcenter.CloudServicesConfiguration`.
+    """
+
+    def test_func(self):
+        return verify_user_is_privileged(self.request.user)
+
+    def handle_no_permission(self):
+        messages.error(self.request, "You do not have permission to access that.")
+        return redirect("home:dashboard")
+
+    def post(self, request, *args, **kwargs):
+        # Add an async task grouped as ``GCP Test``
+        result = "success"
+        try:
+            async_task(
+                "ghostwriter.shepherd.tasks.test_gcp",
+                self.request.user,
+                group="GCP Test",
+            )
+            message = "GCP test has been successfully queued."
+        except Exception:  # pragma: no cover
+            result = "error"
+            message = "GCP test could not be queued."
+
+        data = {
+            "result": result,
+            "message": message,
+        }
+        return JsonResponse(data)
+
 
 class TestNamecheapConnection(RoleBasedAccessControlMixin, View):
     """
@@ -250,6 +284,40 @@ class TestNamecheapConnection(RoleBasedAccessControlMixin, View):
         except Exception:  # pragma: no cover
             result = "error"
             message = "Namecheap API test could not be queued."
+
+        data = {
+            "result": result,
+            "message": message,
+        }
+        return JsonResponse(data)
+
+class TestCloudflareConnection(RoleBasedAccessControlMixin, View):
+    """
+    Create an individual :model:`django_q.Task` under group ``Cloudflare Test`` with
+    :task:`shepherd.tasks.test_cloudflare` to test the Cloudflare API configuration stored
+    in :model:`commandcenter.CloudflareConfiguration`.
+    """
+
+    def test_func(self):
+        return verify_user_is_privileged(self.request.user)
+
+    def handle_no_permission(self):
+        messages.error(self.request, "You do not have permission to access that.")
+        return redirect("home:dashboard")
+
+    def post(self, request, *args, **kwargs):
+        # Add an async task grouped as ``Cloudflare Test``
+        result = "success"
+        try:
+            async_task(
+                "ghostwriter.shepherd.tasks.test_cloudflare",
+                self.request.user,
+                group="Cloudflare Test",
+            )
+            message = "Cloudflare API test has been successfully queued."
+        except Exception:  # pragma: no cover
+            result = "error"
+            message = "Cloudflare API test could not be queued."
 
         data = {
             "result": result,

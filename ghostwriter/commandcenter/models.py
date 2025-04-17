@@ -74,6 +74,48 @@ class NamecheapConfiguration(SingletonModel):
     def sanitized_api_key(self):
         return sanitize(self.api_key)
 
+class CloudflareConfiguration(SingletonModel):
+    enable = models.BooleanField(default=False)
+    api_key = models.CharField(max_length=255, default="Cloudflare API key", help_text="Your Cloudflare API key")
+    username = models.CharField(max_length=255, default="Account Email", help_text="Your Cloudflare email")
+    account_id = models.CharField(
+        "Account ID",
+        max_length=255,
+        default="Account ID",
+        help_text="Your Cloudflare Account ID",
+    )
+    client_ip = models.CharField(
+        "Whitelisted IP Address",
+        max_length=255,
+        default="Whitelisted IP Address",
+        help_text="Your external IP address registered with Cloudflare",
+    )
+    page_size = models.IntegerField(
+        "Page Size",
+        default=100,
+        help_text="Maximum number of domains to return (100 is the max allowed)",
+    )
+
+    def __str__(self):
+        return "Cloudflare Configuration"
+
+    class Meta:
+        verbose_name = "Cloudflare Configuration"
+
+    @property
+    def sanitized_api_key(self):
+        return sanitize(self.api_key)
+
+    def __str__(self):
+        return "Cloudflare Configuration"
+
+    class Meta:
+        verbose_name = "Cloudflare Configuration"
+
+    @property
+    def sanitized_api_key(self):
+        return sanitize(self.api_key)
+
 
 class ReportConfiguration(SingletonModel):
     enable_borders = models.BooleanField(default=False, help_text="Enable borders around images in Word documents")
@@ -281,6 +323,16 @@ class CloudServicesConfiguration(SingletonModel):
         default=7,
         help_text="Number of days to delay cloud monitoring notifications for teardown",
     )
+    # GCP-Specific Configuration Fields
+    gcp_project_id = models.CharField("GCP Project ID", max_length=255, default="your-project-id")
+    gcp_private_key_id = models.CharField("GCP Private Key ID", max_length=255, default="your-private-key-id")
+    gcp_private_key = models.TextField("GCP Private Key", default="your-private-key")
+    gcp_client_email = models.CharField("GCP Client Email", max_length=255, default="your-service-account@example.iam.gserviceaccount.com")
+    gcp_client_id = models.CharField("GCP Client ID", max_length=255, default="your-client-id")
+    gcp_auth_uri = models.CharField("GCP Auth URI", max_length=255, default="https://accounts.google.com/o/oauth2/auth")
+    gcp_token_uri = models.CharField("GCP Token URI", max_length=255, default="https://oauth2.googleapis.com/token")
+    gcp_auth_cert_url = models.CharField("GCP Auth Provider Cert URL", max_length=255, default="https://www.googleapis.com/oauth2/v1/certs")
+    gcp_client_cert_url = models.TextField("GCP Client Cert URL", default="https://www.googleapis.com/robot/v1/metadata/x509/your-service-account@example.iam.gserviceaccount.com")
 
     def __str__(self):
         return "Cloud Services Configuration"

@@ -37,6 +37,7 @@ from ghostwriter.commandcenter.models import (
     CloudServicesConfiguration,
     ExtraFieldSpec,
     NamecheapConfiguration,
+    CloudflareConfiguration,
     VirusTotalConfiguration,
 )
 from ghostwriter.modules.shared import add_content_disposition_header
@@ -263,6 +264,18 @@ class DomainRelease(RoleBasedAccessControlMixin, SingleObjectMixin, View):
                         group="Individual Domain Update",
                         hook="ghostwriter.modules.notifications_slack.send_slack_complete_msg",
                     )
+
+            # Cloudflare
+            if domain_instance.registrar.lower() == "cloudflare":
+                cloudflare_config = CloudflareConfiguration.get_solo()
+                if cloudflare_config.enable:
+                    async_task(
+                        "ghostwriter.shepherd.tasks.cloudflare_reset_dns",
+                        cloudflare_config=cloudflare_config,
+                        domain=domain_instance,
+                        group="Individual Domain Update",
+                        hook="ghostwriter.modules.notifications_slack.send_slack_complete_msg",
+                    )
         return JsonResponse(data)
 
 
@@ -423,7 +436,33 @@ class RegistrarSyncNamecheap(RoleBasedAccessControlMixin, View):
             "message": message,
         }
         return JsonResponse(data)
+        
+class RegistrarSyncCloudflare(RoleBasedAccessControlMixin, View):
+    """
+    Create an individual :model:`django_q.Task` under group ``Cloudflare Update`` with
+    :task:`shepherd.tasks.fetch_cloudflare_domains` to create or update one or more
+    :model:`shepherd.Domain`.
+    """
 
+    def post(self, request, *args, **kwargs):
+        # Add an async task grouped as ``Cloudflare Update``
+        result = "success"
+        try:
+            task_id = async_task(
+                "ghostwriter.shepherd.tasks.fetch_cloudflare_domains",
+                group="Cloudflare Update",
+                hook="ghostwriter.modules.notifications_slack.send_slack_complete_msg",
+            )
+            message = "Successfully queued Cloudflare update task (Task ID {task}).".format(task=task_id)
+        except Exception:
+            result = "error"
+            message = "Cloudflare update task could not be queued!"
+
+        data = {
+            "result": result,
+            "message": message,
+        }
+        return JsonResponse(data)
 
 class MonitorCloudInfrastructure(RoleBasedAccessControlMixin, View):
     """
@@ -702,6 +741,16 @@ def update(request):
         End time of latest :model:`django_q.Task` for group "Namecheap Update"
     ``namecheap_last_result``
         Result of latest :model:`django_q.Task` for group "Namecheap Update"
+    ``enable_cloudflare``
+        The associated value from :model:`commandcenter.CloudflareConfiguration`
+    ``cloudflare_last_update_requested``
+        Start time of latest :model:`django_q.Task` for group "Cloudflare Update"
+    ``cloudflare_last_update_completed``
+        End time of latest :model:`django_q.Task` for group "Cloudflare Update"
+    ``cloudflare_last_update_time``
+        End time of latest :model:`django_q.Task` for group "Cloudflare Update"
+    ``cloudflare_last_result``
+        Result of latest :model:`django_q.Task` for group "Cloudflare Update"
     ``enable_cloud_monitor``
         The associated value from :model:`commandcenter.CloudServicesConfiguration`
     ``cloud_last_update_requested``
@@ -727,6 +776,8 @@ def update(request):
         enable_cloud_monitor = cloud_config.enable
         namecheap_config = NamecheapConfiguration.get_solo()
         enable_namecheap = namecheap_config.enable
+        cloudflare_config = CloudflareConfiguration.get_solo()
+        enable_cloudflare = cloudflare_config.enable
 
         # Collect data for category updates
         cat_last_update_completed = ""
@@ -794,6 +845,27 @@ def update(request):
         else:
             namecheap_last_update_requested = "Namecheap Syncing is Disabled"
 
+        # Collect data for Cloudflare updates
+        cloudflare_last_update_completed = ""
+        cloudflare_last_update_time = ""
+        cloudflare_last_result = ""
+        if enable_cloudflare:
+            try:
+                queryset = Task.objects.filter(group="Cloudflare Update")[0]
+                cloudflare_last_update_requested = queryset.started
+                cloudflare_last_result = queryset.result
+                if queryset.success:
+                    cloudflare_last_update_completed = queryset.stopped
+                    cloudflare_last_update_time = round(queryset.time_taken() / 60, 2)
+                    if cloudflare_last_result["errors"]:
+                        cloudflare_last_update_completed = "Failed"
+                else:
+                    cloudflare_last_update_completed = "Failed"
+            except IndexError:
+                cloudflare_last_update_requested = "Cloudflare Sync Has Not Been Run Yet"
+        else:
+            cloudflare_last_update_requested = "Cloudflare Syncing is Disabled"
+
         # Collect data for cloud monitoring
         cloud_last_update_completed = ""
         cloud_last_update_time = ""
@@ -831,6 +903,11 @@ def update(request):
             "namecheap_last_update_completed": namecheap_last_update_completed,
             "namecheap_last_update_time": namecheap_last_update_time,
             "namecheap_last_result": namecheap_last_result,
+            "enable_cloudflare": enable_cloudflare,
+            "cloudflare_last_update_requested": cloudflare_last_update_requested,
+            "cloudflare_last_update_completed": cloudflare_last_update_completed,
+            "cloudflare_last_update_time": cloudflare_last_update_time,
+            "cloudflare_last_result": cloudflare_last_result,
             "enable_cloud_monitor": enable_cloud_monitor,
             "cloud_last_update_requested": cloud_last_update_requested,
             "cloud_last_update_completed": cloud_last_update_completed,
@@ -936,7 +1013,7 @@ class DomainListView(RoleBasedAccessControlMixin, ListView):
         if len(data) == 0:
             data["domain_status"] = 1
             data["exclude_expired"] = True
-        domains_filter = DomainFilter(data, queryset=self.get_queryset())
+        domains_filter = DomainFilter(data, queryset=self.get_queryset(), request=self.request)
         return render(
             request, "shepherd/domain_list.html", {"filter": domains_filter, "autocomplete": self.autocomplete}
         )
@@ -1002,7 +1079,7 @@ class ServerListView(RoleBasedAccessControlMixin, ListView):
         data = request.GET.copy()
         if len(data) == 0:
             data["server_status"] = 1
-        servers_filter = ServerFilter(data, queryset=self.get_queryset())
+        servers_filter = ServerFilter(data, queryset=self.get_queryset(), request=self.request)
         return render(
             request, "shepherd/server_list.html", {"filter": servers_filter, "autocomplete": self.autocomplete}
         )

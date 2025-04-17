@@ -28,9 +28,19 @@ urlpatterns += [
         name="ajax_test_do",
     ),
     path(
+        "ajax/management/test/gcp",
+        views.TestGCPConnection.as_view(),
+        name="ajax_test_gcp",
+    ),
+    path(
         "ajax/management/test/namecheap",
         views.TestNamecheapConnection.as_view(),
         name="ajax_test_namecheap",
+    ),
+    path(
+        "ajax/management/test/cloudflare",
+        views.TestCloudflareConnection.as_view(),
+        name="ajax_test_cloudflare",
     ),
     path(
         "ajax/management/test/slack",

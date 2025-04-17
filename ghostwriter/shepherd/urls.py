@@ -75,6 +75,11 @@ urlpatterns += [
         name="ajax_update_namecheap",
     ),
     path(
+        "ajax/update/cloudflare",
+        views.RegistrarSyncCloudflare.as_view(),
+        name="ajax_update_cloudflare",
+    ),
+    path(
         "ajax/update/cloud",
         views.MonitorCloudInfrastructure.as_view(),
         name="ajax_cloud_monitor",

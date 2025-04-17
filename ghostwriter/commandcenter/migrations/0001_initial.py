@@ -91,6 +91,21 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
+            name="CloudflareConfiguration",
+            fields=[
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("enable", models.BooleanField(default=False)),
+                ("api_key", models.CharField(default="Cloudflare Global API Key", max_length=255)),
+                ("username", models.CharField(default="Account email", max_length=255)),
+                ("account_id", models.CharField(default="Account ID", max_length=255)),
+                ("client_ip", models.CharField(default="Whitelisted IP Address", max_length=255)),
+                ("page_size", models.IntegerField(default=100)),
+            ],
+            options={
+                "verbose_name": "Cloudflare Configuration",
+            },
+        ),
+        migrations.CreateModel(
             name="ReportConfiguration",
             fields=[
                 ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
