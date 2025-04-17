@@ -9,6 +9,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from math import ceil
 from cloudflare import Cloudflare
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
 
 # Django Imports
 from django.db.models import Q
@@ -24,7 +26,7 @@ from lxml import objectify
 from ghostwriter.commandcenter.models import (
     CloudServicesConfiguration,
     NamecheapConfiguration,
-    CLoudflareConfiguration,
+    CloudflareConfiguration,
     VirusTotalConfiguration,
 )
 from ghostwriter.modules.cloud_monitors import (
@@ -32,6 +34,7 @@ from ghostwriter.modules.cloud_monitors import (
     fetch_aws_lightsail,
     fetch_aws_s3,
     fetch_digital_ocean,
+    fetch_gcp_instances,
     test_aws,
 )
 from ghostwriter.modules.dns_toolkit import DNSCollector
@@ -70,6 +73,22 @@ class BearerAuth(requests.auth.AuthBase):
         r.headers["Authorization"] = "Bearer " + self.token
         return r
 
+def parse_iso_date(date_str):
+    """
+    Convert ISO 8601 datetime string to a Python datetime.date object.
+    If the string is None or invalid, returns None.
+    """
+    if not date_str:
+        return None
+    try:
+        # This handles the 'Z' suffix for UTC
+        return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ").date()
+    except ValueError:
+        try:
+            # Fallback if microseconds are missing
+            return datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ").date()
+        except Exception:
+            return None
 
 def namecheap_reset_dns(namecheap_config, domain):
     """
@@ -919,16 +938,17 @@ def fetch_cloudflare_domains():
     logger.info("Starting Cloudflare synchronization task at %s", datetime.now())
 
     cloudflare_config = CloudflareConfiguration.get_solo()
-    
+
     try:
         client = Cloudflare(
-            api_token=cloudflare_config.api_token
+            api_email=cloudflare_config.username,
+            api_key=cloudflare_config.api_key
         )
-        
+
         page = 1
         per_page = 20  # Adjust based on API limits
         total_pages = 1
-    
+
         while page <= total_pages:
             logger.info("Requesting page %s of %s", page, total_pages)
             response = client.zones.list(page=page, per_page=per_page)
@@ -984,23 +1004,45 @@ def fetch_cloudflare_domains():
                     domain_changes["updates"][domain.id] = {"domain": domain.name, "change": "renewed"}
 
         for domain in domains_list:
-            entry = {"name": domain.name, "registrar": "Cloudflare"}
-            newly_burned = domain.status == "burned"
-            
+            # Use your Cloudflare account ID from config
+            account_id = cloudflare_config.account_id  # Make sure you have this field in your model
+
+            # Make the registrar lookup call
+            registrar_info = client.registrar.domains.get(
+                domain_name=domain["name"],
+                account_id=account_id
+            )
+
+            # Enrich the entry with registrar metadata
+            entry = {
+                "name": domain["name"],
+                "registrar": "Cloudflare",
+                "expiration": parse_iso_date(registrar_info.get("expires_at")),
+                "creation": parse_iso_date(registrar_info.get("created_at")),
+            }
+
+            newly_burned = domain["status"] == "burned"
+
             if newly_burned:
                 entry["health_status"] = health_burned_status
                 entry["domain_status"] = burned_status
                 entry["burned_explanation"] = "<p>Cloudflare detected potential phishing activity on this domain.</p>"
-            
+
             try:
-                instance, created = Domain.objects.update_or_create(name=domain.name, defaults=entry)
+                instance, created = Domain.objects.update_or_create(name=domain["name"], defaults=entry)
                 instance.save()
-                change_status = "created & burned" if created and newly_burned else "burned" if newly_burned else "created" if created else "updated"
-                domain_changes["updates"][instance.id] = {"domain": domain.name, "change": change_status}
+                change_status = (
+                    "created & burned" if created and newly_burned else
+                    "burned" if newly_burned else
+                    "created" if created else
+                    "updated"
+                )
+                domain_changes["updates"][instance.id] = {"domain": domain["name"], "change": change_status}
             except Exception:
                 trace = traceback.format_exc()
-                logger.exception("Failed to update domain %s", domain.name)
-                domain_changes["errors"][domain.name] = {"error": trace}
+                logger.exception("Failed to update domain %s", domain["name"])
+                domain_changes["errors"][domain["name"]] = {"error": trace}
+
 
         logger.info("Cloudflare synchronization completed at %s with these changes:\n%s", datetime.now(), domain_changes)
     else:
@@ -1048,7 +1090,6 @@ def json_datetime_converter(dt):
     if isinstance(dt, datetime):
         return str(dt)
     return None
-
 
 def review_cloud_infrastructure(aws_only_running=False, do_only_running=False):
     """
@@ -1131,6 +1172,21 @@ def review_cloud_infrastructure(aws_only_running=False, do_only_running=False):
         if do_results["capable"]:
             for instance in do_results["instances"]:
                 vps_info["instances"][instance["id"]] = instance
+
+    ###############
+    # GCP Section #
+    ###############
+
+    # Fetch GCP results using full cloud_config object
+    gcp_results = fetch_gcp_instances(cloud_config)
+
+    if gcp_results["message"]:
+        vps_info["errors"]["gcp"] = gcp_results["message"]
+    else:
+        if gcp_results["capable"]:
+            for instance_id, instance in gcp_results["instances"].items():
+                vps_info["instances"][instance_id] = instance
+
 
     ##################
     # Notifications  #
@@ -1533,18 +1589,19 @@ def test_virustotal(user):
     logger.info("Test of the VirusTotal completed at %s", datetime.now())
     return {"result": level, "message": message}
 
-def test_cloudflare_api(user):
+def test_cloudflare(user):
     """
     Test the Cloudflare API configuration stored in environment variables stored in :model:`commandcenter.CloudflareConfiguration`.
     """
     level = "error"
     logger.info("Starting Cloudflare API test at %s", datetime.now())
+    cloudflare_config = CloudflareConfiguration.get_solo()
     try:
         client = Cloudflare(
-            api_email=os.environ.get("CLOUDFLARE_EMAIL"),
-            api_key=os.environ.get("CLOUDFLARE_API_KEY"),
+            api_email=cloudflare_config.username,
+            api_key=cloudflare_config.api_key
         )
-        response = client.accounts.tokens.verify()
+        response = client.zones.list()
         if response.success:
             level = "success"
             message = "Successfully authenticated to Cloudflare"
@@ -1554,4 +1611,86 @@ def test_cloudflare_api(user):
         trace = traceback.format_exc()
         logger.exception("Cloudflare API request failed")
         message = f"The Cloudflare API request failed: {trace}"
+    return {"result": level, "message": message}
+
+def format_gcp_private_key(raw_key: str) -> str:
+    """
+    Normalize a GCP private key string to ensure it's in proper PEM format.
+    Handles keys stored with literal '\\n' as well as already-formatted PEM blocks.
+    """
+    if not raw_key:
+        return ""
+
+    if "\\n" in raw_key:
+        raw_key = raw_key.replace("\\n", "\n")
+
+    raw_key = raw_key.strip()
+
+    if not raw_key.startswith("-----BEGIN PRIVATE KEY-----"):
+        raw_key = f"-----BEGIN PRIVATE KEY-----\n{raw_key}"
+    if not raw_key.endswith("-----END PRIVATE KEY-----"):
+        raw_key = f"{raw_key}\n-----END PRIVATE KEY-----"
+
+    return raw_key
+
+def test_gcp(user):
+    """
+    Test the GCP service account credentials configured in
+    :model:`commandcenter.CloudServicesConfiguration`.
+    """
+    cloud_config = CloudServicesConfiguration.get_solo()
+    level = "error"
+    logger.info("Starting a test of the GCP credentials at %s", datetime.now())
+
+    private_key = format_gcp_private_key(cloud_config.gcp_private_key)
+
+    try:
+        # Build credentials from individual variables (not file)
+        service_account_info = {
+            "type": "service_account",
+            "project_id": cloud_config.gcp_project_id,
+            "private_key_id": cloud_config.gcp_private_key_id,
+            "private_key": private_key,
+            "client_email": cloud_config.gcp_client_email,
+            "client_id": cloud_config.gcp_client_id,
+            "auth_uri": cloud_config.gcp_auth_uri,
+            "token_uri": cloud_config.gcp_token_uri,
+            "auth_provider_x509_cert_url": cloud_config.gcp_auth_cert_url,
+            "client_x509_cert_url": cloud_config.gcp_client_cert_url
+        }
+
+        credentials = service_account.Credentials.from_service_account_info(service_account_info)
+        compute = build('compute', 'v1', credentials=credentials, cache_discovery=False)
+
+        # Attempt a simple API call — list zones in the project
+        request = compute.zones().list(project=cloud_config.gcp_project_id)
+        response = request.execute()
+
+        if "items" in response:
+            logger.info("GCP credentials are functional, beginning infrastructure review")
+            logger.info("Successfully verified the GCP service account credentials")
+            message = "Successfully verified the GCP service account credentials"
+            level = "success"
+        else:
+            logger.warning("GCP credentials did not return zone list as expected")
+            message = "GCP credentials did not return zone list as expected — please double-check access scopes and permissions"
+
+    except Exception as e:
+        logger.exception("Testing authentication to GCP failed")
+        message = f"Testing authentication to GCP failed: {str(e)}"
+
+    # Send a message to the requesting user
+    async_to_sync(channel_layer.group_send)(
+        f"notify_{user}",
+        {
+            "type": "message",
+            "message": {
+                "message": message,
+                "level": level,
+                "title": "GCP Test Complete",
+            },
+        },
+    )
+
+    logger.info("Test of the GCP credentials completed at %s", datetime.now())
     return {"result": level, "message": message}

@@ -47,12 +47,6 @@ def update_session(request):
                 else:
                     request.session["sidebar"] = {}
                     request.session["sidebar"]["sticky"] = True
-            if req_data == "filter":
-                if "filter" in request.session.keys():
-                    request.session["filter"]["sticky"] ^= True
-                else:
-                    request.session["filter"] = {}
-                    request.session["filter"]["sticky"] = True
             request.session.save()
         data = {
             "result": "success",
@@ -228,6 +222,40 @@ class TestDOConnection(RoleBasedAccessControlMixin, View):
         }
         return JsonResponse(data)
 
+class TestGCPConnection(RoleBasedAccessControlMixin, View):
+    """
+    Create an individual :model:`django_q.Task` under group ``GCP Test`` with
+    :task:`shepherd.tasks.test_gcp` to test the GCP info stored in
+    :model:`commandcenter.CloudServicesConfiguration`.
+    """
+
+    def test_func(self):
+        return verify_user_is_privileged(self.request.user)
+
+    def handle_no_permission(self):
+        messages.error(self.request, "You do not have permission to access that.")
+        return redirect("home:dashboard")
+
+    def post(self, request, *args, **kwargs):
+        # Add an async task grouped as ``GCP Test``
+        result = "success"
+        try:
+            async_task(
+                "ghostwriter.shepherd.tasks.test_gcp",
+                self.request.user,
+                group="GCP Test",
+            )
+            message = "GCP test has been successfully queued."
+        except Exception:  # pragma: no cover
+            result = "error"
+            message = "GCP test could not be queued."
+
+        data = {
+            "result": result,
+            "message": message,
+        }
+        return JsonResponse(data)
+
 
 class TestNamecheapConnection(RoleBasedAccessControlMixin, View):
     """
@@ -266,7 +294,7 @@ class TestNamecheapConnection(RoleBasedAccessControlMixin, View):
 class TestCloudflareConnection(RoleBasedAccessControlMixin, View):
     """
     Create an individual :model:`django_q.Task` under group ``Cloudflare Test`` with
-    :task:`shepherd.tasks.test_Cloudflare` to test the Cloudflare API configuration stored
+    :task:`shepherd.tasks.test_cloudflare` to test the Cloudflare API configuration stored
     in :model:`commandcenter.CloudflareConfiguration`.
     """
 
@@ -282,7 +310,7 @@ class TestCloudflareConnection(RoleBasedAccessControlMixin, View):
         result = "success"
         try:
             async_task(
-                "ghostwriter.shepherd.tasks.test_Cloudflare",
+                "ghostwriter.shepherd.tasks.test_cloudflare",
                 self.request.user,
                 group="Cloudflare Test",
             )

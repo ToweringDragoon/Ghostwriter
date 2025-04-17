@@ -11,6 +11,8 @@ import pytz
 import requests
 from botocore.config import Config
 from botocore.exceptions import ClientError, ConnectTimeoutError
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
 
 # Using __name__ resolves to ghostwriter.modules.cloud_monitors
 logger = logging.getLogger(__name__)
@@ -484,3 +486,93 @@ def fetch_digital_ocean(api_key, ignore_tags=None, do_only_running=False):
             )
 
     return {"capable": capable, "message": message, "instances": instances}
+
+def format_gcp_private_key(raw_key: str) -> str:
+    """
+    Normalize a GCP private key string to ensure it's in proper PEM format.
+    Handles keys stored with literal '\\n' as well as already-formatted PEM blocks.
+    """
+    if not raw_key:
+        return ""
+
+    if "\\n" in raw_key:
+        raw_key = raw_key.replace("\\n", "\n")
+
+    raw_key = raw_key.strip()
+
+    if not raw_key.startswith("-----BEGIN PRIVATE KEY-----"):
+        raw_key = f"-----BEGIN PRIVATE KEY-----\n{raw_key}"
+    if not raw_key.endswith("-----END PRIVATE KEY-----"):
+        raw_key = f"{raw_key}\n-----END PRIVATE KEY-----"
+
+    return raw_key
+
+def fetch_gcp_instances(cloud_config):
+    """
+    Fetches all virtual machine instances from GCP using values from the
+    CloudServicesConfiguration model.
+    """
+    instances = {}
+    try:
+        private_key = format_gcp_private_key(cloud_config.gcp_private_key)
+
+        service_account_info = {
+            "type": "service_account",
+            "project_id": cloud_config.gcp_project_id,
+            "private_key_id": cloud_config.gcp_private_key_id,
+            "private_key": private_key,
+            "client_email": cloud_config.gcp_client_email,
+            "client_id": cloud_config.gcp_client_id,
+            "auth_uri": cloud_config.gcp_auth_uri,
+            "token_uri": cloud_config.gcp_token_uri,
+            "auth_provider_x509_cert_url": cloud_config.gcp_auth_cert_url,
+            "client_x509_cert_url": cloud_config.gcp_client_cert_url
+        }
+
+        credentials = service_account.Credentials.from_service_account_info(service_account_info)
+        compute = build('compute', 'v1', credentials=credentials, cache_discovery=False)
+
+        # Get all zones
+        zones_request = compute.zones().list(project=cloud_config.gcp_project_id)
+        zones_response = zones_request.execute()
+        zones = zones_response.get('items', [])
+
+        for zone in zones:
+            zone_name = zone['name']
+            instance_request = compute.instances().list(project=cloud_config.gcp_project_id, zone=zone_name)
+            response = instance_request.execute()
+
+            if 'items' in response:
+                for instance in response['items']:
+                    instance_id = instance['id']
+                    name = instance['name']
+                    status = instance['status']
+                    tags = instance.get('tags', {}).get('items', [])
+
+                    internal_ip = None
+                    external_ip = None
+                    network_interfaces = instance.get('networkInterfaces', [])
+                    if network_interfaces:
+                        internal_ip = network_interfaces[0].get('networkIP')
+                        access_configs = network_interfaces[0].get('accessConfigs', [])
+                        if access_configs:
+                            external_ip = access_configs[0].get('natIP')
+
+                    instances[instance_id] = {
+                        "id": instance_id,
+                        "name": name,
+                        "provider": "gcp",
+                        "zone": zone_name,
+                        "state": status,
+                        "tags": ",".join(tags),
+                        "public_ip": [external_ip] if external_ip else [],
+                        "private_ip": [internal_ip] if internal_ip else [],
+                        "launch_time": instance.get("creationTimestamp", ""),
+                        "ignore": False
+                    }
+
+        return {"message": "", "capable": True, "instances": instances}
+
+    except Exception as e:
+        logger.exception("GCP instance fetch failed")
+        return {"message": str(e), "capable": False, "instances": {}}
