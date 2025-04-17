@@ -513,6 +513,7 @@ def fetch_gcp_instances(cloud_config):
     CloudServicesConfiguration model.
     """
     instances = {}
+
     try:
         private_key = format_gcp_private_key(cloud_config.gcp_private_key)
 
@@ -558,16 +559,38 @@ def fetch_gcp_instances(cloud_config):
                         if access_configs:
                             external_ip = access_configs[0].get('natIP')
 
+                    # Parse launch time
+                    raw_launch_time = instance.get("creationTimestamp")
+                    launch_time = None
+                    time_up = "Unknown"
+                    if raw_launch_time:
+                        try:
+                            launch_time = datetime.strptime(raw_launch_time, "%Y-%m-%dT%H:%M:%S.%f%z")
+                            now = datetime.now(timezone.utc)
+                            delta = now - launch_time
+                            time_up = f"{delta.days // 30} months"
+                        except Exception:
+                            logger.warning(f"Could not parse launch time: {raw_launch_time}")
+
+                    # Determine machine type (extract from URL)
+                    machine_type_full = instance.get("machineType", "")
+                    machine_type = machine_type_full.split("/")[-1] if "/" in machine_type_full else machine_type_full
+
                     instances[instance_id] = {
                         "id": instance_id,
                         "name": name,
-                        "provider": "gcp",
+                        "provider": "Google Cloud Platform",
+                        "service": "Compute Engine",
+                        "type": machine_type,
+                        "monthly_cost": 0.0,  # Can be updated later via billing API
+                        "cost_to_date": 0.0,  # Optional estimate if billing integrated
                         "zone": zone_name,
                         "state": status,
-                        "tags": ",".join(tags),
+                        "tags": ", ".join(tags),
                         "public_ip": [external_ip] if external_ip else [],
                         "private_ip": [internal_ip] if internal_ip else [],
-                        "launch_time": instance.get("creationTimestamp", ""),
+                        "launch_time": launch_time,
+                        "time_up": time_up,
                         "ignore": False
                     }
 
